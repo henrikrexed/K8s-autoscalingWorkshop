@@ -32,7 +32,7 @@ spec:
     spec:
       containers:
         - name: cart
-          image: otel-demo-light/cart:latest
+          image: ghcr.io/henrikrexed/opentelemetry-demo-light/payment:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 7070
