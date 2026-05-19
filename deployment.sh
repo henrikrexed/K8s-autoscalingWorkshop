@@ -15,16 +15,20 @@
 # tenant you've been invited to — no dtctl install step needed.
 #
 # Parameters (also read from environment variables of the same name):
-#   --clustername    name of the kind cluster (default: obs-optim)
-#   --dturl          Dynatrace tenant URL,  e.g. https://abc12345.live.dynatrace.com
-#   --dtapitoken     operator/automation token (notebooks, workflows, settings)
-#   --dtingesttoken  data-ingest token (metrics.ingest, openTelemetryTrace.ingest)
+#   --clustername        name of the kind cluster (default: obs-optim)
+#   --dturl              Dynatrace tenant URL  (e.g. https://abc12345.live.dynatrace.com)
+#                        — OR supply --dtenvironmentid + --dtenvironmenttype instead
+#   --dtenvironmentid    Dynatrace environment identifier (e.g. abc12345)
+#   --dtenvironmenttype  Environment type: live | sprint | dev
+#   --dtoperatortoken    Operator token (installer, settings, entities, token mgmt)
+#   --dtingesttoken      Data-ingest token (metrics.ingest, openTelemetryTrace.ingest)
 #
 # Usage:
 #   ./deployment.sh --clustername obs-optim \
-#                   --dturl "$DT_TENANT_URL" \
-#                   --dtapitoken "$DT_API_TOKEN" \
-#                   --dtingesttoken "$DT_INGEST_TOKEN"
+#                   --dtenvironmentid "$DT_ENVIRONMENT_ID" \
+#                   --dtenvironmenttype "$DT_ENVIRONMENT_TYPE" \
+#                   --dtoperatortoken "$DT_OPERATOR_TOKEN" \
+#                   --dtingesttoken "$DT_API_TOKEN"
 ###############################################################################
 
 set -euo pipefail
@@ -61,8 +65,10 @@ derive_cluster_name() {
 # --- defaults from env ------------------------------------------------------
 CLUSTERNAME="${CLUSTER_NAME:-$(derive_cluster_name)}"
 DTURL="${DT_TENANT_URL:-}"
-DTAPITOKEN="${DT_API_TOKEN:-}"
-DTINGESTTOKEN="${DT_INGEST_TOKEN:-}"
+DT_ENV_ID="${DT_ENVIRONMENT_ID:-}"
+DT_ENV_TYPE="${DT_ENVIRONMENT_TYPE:-live}"
+DTOPERATORTOKEN="${DT_OPERATOR_TOKEN:-}"
+DTINGESTTOKEN="${DT_API_TOKEN:-}"
 
 # otel-demo-light manifests are vendored under otel-demo-light/ in this repo.
 # (No runtime clone — splitting per-Service / per-workload files lets the
@@ -72,17 +78,29 @@ DTINGESTTOKEN="${DT_INGEST_TOKEN:-}"
 # --- parse flags ------------------------------------------------------------
 while [ $# -gt 0 ]; do
   case "$1" in
-    --clustername)    CLUSTERNAME="$2";    shift 2;;
-    --dturl)          DTURL="$2";          shift 2;;
-    --dtapitoken)     DTAPITOKEN="$2";     shift 2;;
-    --dtingesttoken)  DTINGESTTOKEN="$2";  shift 2;;
-    # legacy aliases (old script used --dtoperatortoken)
-    --dtoperatortoken) DTAPITOKEN="$2";    shift 2;;
+    --clustername)       CLUSTERNAME="$2";      shift 2;;
+    --dturl)             DTURL="$2";            shift 2;;
+    --dtenvironmentid)   DT_ENV_ID="$2";        shift 2;;
+    --dtenvironmenttype) DT_ENV_TYPE="$2";      shift 2;;
+    --dtoperatortoken)   DTOPERATORTOKEN="$2";  shift 2;;
+    --dtingesttoken)     DTINGESTTOKEN="$2";    shift 2;;
+    # legacy aliases (old secret names)
+    --dtapitoken)        DTOPERATORTOKEN="$2";  shift 2;;
     -h|--help)
       sed -n '1,40p' "$0"; exit 0;;
     *) echo "warn: ignoring unsupported option $1"; shift;;
   esac
 done
+
+# --- resolve tenant URL from environment ID + type if --dturl not given ----
+if [[ -z "$DTURL" && -n "$DT_ENV_ID" ]]; then
+  DT_ENV_TYPE="${DT_ENV_TYPE,,}"  # lowercase
+  if [[ "$DT_ENV_TYPE" == "live" ]]; then
+    DTURL="https://${DT_ENV_ID}.live.dynatrace.com"
+  else
+    DTURL="https://${DT_ENV_ID}.${DT_ENV_TYPE}.dynatracelabs.com"
+  fi
+fi
 
 # --- pre-flight -------------------------------------------------------------
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' is required"; exit 1; }; }
@@ -93,9 +111,9 @@ need helm
 need jq
 need git
 
-[ -n "$DTURL" ]         || { echo "error: --dturl / DT_TENANT_URL is required"; exit 1; }
-[ -n "$DTAPITOKEN" ]    || { echo "error: --dtapitoken / DT_API_TOKEN is required"; exit 1; }
-[ -n "$DTINGESTTOKEN" ] || { echo "error: --dtingesttoken / DT_INGEST_TOKEN is required"; exit 1; }
+[ -n "$DTURL" ]            || { echo "error: --dturl or --dtenvironmentid is required"; exit 1; }
+[ -n "$DTOPERATORTOKEN" ]  || { echo "error: --dtoperatortoken / DT_OPERATOR_TOKEN is required"; exit 1; }
+[ -n "$DTINGESTTOKEN" ]    || { echo "error: --dtingesttoken / DT_API_TOKEN is required"; exit 1; }
 
 # Strip trailing slash from tenant URL
 DTURL="${DTURL%/}"
@@ -144,7 +162,7 @@ kubectl -n dynatrace wait pod \
 # (entities/settings/PaaS), dataIngestToken pipes metrics/traces directly
 # from the ActiveGate into the tenant.
 kubectl -n dynatrace create secret generic dynakube \
-  --from-literal=apiToken="$DTAPITOKEN" \
+  --from-literal=apiToken="$DTOPERATORTOKEN" \
   --from-literal=dataIngestToken="$DTINGESTTOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 

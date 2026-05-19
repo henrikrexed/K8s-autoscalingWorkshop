@@ -53,9 +53,10 @@ Set these under **Settings → Secrets and variables → Codespaces → New repo
 
 | Secret | Required? | Example | What it is |
 |---|---|---|---|
-| `DT_TENANT_URL`       | required | `https://abc12345.live.dynatrace.com` | Your Dynatrace tenant URL |
-| `DT_API_TOKEN`        | required | `dt0c01....` | Operator token (entities + settings + ActiveGate token creation + PaaS installer) |
-| `DT_INGEST_TOKEN`     | required | `dt0c01....` | Ingest token (metrics, logs, events, OpenTelemetry traces) |
+| `DT_ENVIRONMENT_ID`   | required | `abc12345` | Dynatrace tenant identifier (the first part of your tenant URL) |
+| `DT_ENVIRONMENT_TYPE` | required | `live` | Environment type: `live`, `sprint`, or `dev` |
+| `DT_OPERATOR_TOKEN`   | required | `dt0c01....` | Operator token (entities + settings + ActiveGate token creation + PaaS installer) |
+| `DT_API_TOKEN`        | required | `dt0c01....` | Ingest token (metrics, logs, events, OpenTelemetry traces) |
 | `OTEL_SERVICE_PREFIX` | optional | `REX-` | Prepended to every `OTEL_SERVICE_NAME` so attendees sharing a tenant don't collide on service names |
 
 ## Open the demo
@@ -68,9 +69,10 @@ If you need to (re)run the deploy by hand inside the Codespace:
 
 ```bash
 bash deployment.sh \
-  --dturl         "$DT_TENANT_URL" \
-  --dtapitoken    "$DT_API_TOKEN" \
-  --dtingesttoken "$DT_INGEST_TOKEN"
+  --dtenvironmentid   "$DT_ENVIRONMENT_ID" \
+  --dtenvironmenttype "$DT_ENVIRONMENT_TYPE" \
+  --dtoperatortoken   "$DT_OPERATOR_TOKEN" \
+  --dtingesttoken     "$DT_API_TOKEN"
 ```
 
 To rebuild the cluster from scratch:
@@ -89,9 +91,9 @@ opentelemetry-demo-light pods (namespace otel-demo, oneagent=false)
 otel-collector (DaemonSet, namespace otel-collector)
    receivers: otlp, filelog
    processors: k8sattributes, resourcedetection, cumulativetodelta, batch
-        │  OTLP/HTTP   Authorization: Api-Token <DT_INGEST_TOKEN>
+        │  OTLP/HTTP   Authorization: Api-Token <DT_API_TOKEN>
         ▼
-${DT_TENANT_URL}/api/v2/otlp
+https://<DT_ENVIRONMENT_ID>.<DT_ENVIRONMENT_TYPE>.dynatrace.com/api/v2/otlp
 ```
 
 The Dynatrace Operator + ActiveGate provide K8s API monitoring (Smartscape entities, events). OneAgent injection is namespace-scoped via the DynaKube's `namespaceSelector: oneagent=true` — the `otel-demo` namespace is labeled `oneagent=false`, so it's observed via OTLP only, not via code-module injection.

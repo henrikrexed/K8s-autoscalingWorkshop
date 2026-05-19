@@ -44,7 +44,7 @@ graph LR
     end
 
     otel_demo -- "OTLP/gRPC" --> otel_collector
-    otel_collector -- "OTLP/HTTP<br/>+ DT_INGEST_TOKEN" --> tenant
+    otel_collector -- "OTLP/HTTP<br/>+ DT_API_TOKEN" --> tenant
     dynatrace_ns -- "k8s API events" --> tenant
     tenant -- "Smartscape entities" --> notebook
     notebook -- "DQL: workloads where<br/>latency ↔ resource usage" --> workflow

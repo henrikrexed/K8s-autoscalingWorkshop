@@ -4,7 +4,7 @@
 # trimmed to the fields this demo actually uses.
 #
 # Two placeholders are substituted by deployment.sh at apply time:
-#   TENANTURL_TOREPLACE      → ${DT_TENANT_URL}
+#   TENANTURL_TOREPLACE      → constructed from DT_ENVIRONMENT_ID + DT_ENVIRONMENT_TYPE
 #   CLUSTER_NAME_TO_REPLACE  → ${CLUSTERNAME}    (e.g. obs-optim)
 #
 # Injection scope:
