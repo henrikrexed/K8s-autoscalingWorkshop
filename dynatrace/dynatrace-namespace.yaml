@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dynatrace
+  labels:
+    name: dynatrace
+    # We explicitly do NOT label this with `oneagent: "true"` — the operator
+    # should not inject the OneAgent into its own namespace.

@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: valkey
+  labels:
+    app: valkey
+    dt.owner: otel-demo
+  annotations:
+    dt.owner: "otel-demo"
+    resource-optimization.dynatrace.com/enabled: "true"
+    resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-path: "otel-demo-light/valkey.yaml"
+    resource-optimization.dynatrace.com/github-branch: "main"
+spec:
+  serviceName: valkey
+  replicas: 1
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+        dt.owner: otel-demo
+      annotations:
+        dt.owner: "otel-demo"
+        resource-optimization.dynatrace.com/enabled: "true"
+        resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-path: "otel-demo-light/valkey.yaml"
+        resource-optimization.dynatrace.com/github-branch: "main"
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:7-alpine
+          command: ["valkey-server", "--save", "", "--appendonly", "no", "--maxmemory", "16mb", "--maxmemory-policy", "allkeys-lru"]
+          ports:
+            - containerPort: 6379
+          envFrom:
+            - configMapRef:
+                name: shared-env
+          env:
+            - name: OTEL_SERVICE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-env
+                  key: OTEL_SERVICE_PREFIX
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)valkey"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=otel-demo"
+          resources:
+            limits:
+              memory: 20Mi
+            requests:
+              memory: 10Mi
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5

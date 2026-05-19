@@ -1,0 +1,37 @@
+# Kustomization for otel-demo-light deployed into the resource-optimization demo.
+#
+# Each workload is split into:
+#   - <name>.yaml       Deployment/StatefulSet with resource-optimization annotations
+#   - <name>_svc.yaml   Service
+#
+# The split matches the hipster-shop layout (the reference pattern from
+# https://github.com/Observe-Resolve/resource-optimization/tree/master/hipster-shop)
+# so the smart-resource-optimizer workflow's GitHub-update step can patch a
+# Deployment's resource requests without churning the unrelated Service file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: otel-demo
+
+resources:
+  - namespace.yaml
+  # Workloads (resource-optimization workflow targets these)
+  - cart.yaml
+  - checkout.yaml
+  - frontend.yaml
+  - load-generator-otel.yaml
+  - payment.yaml
+  - postgres.yaml
+  - product-catalog.yaml
+  - valkey.yaml
+  # Services
+  - cart_svc.yaml
+  - checkout_svc.yaml
+  - frontend_svc.yaml
+  - payment_svc.yaml
+  - postgres_svc.yaml
+  - product-catalog_svc.yaml
+  - valkey_svc.yaml
+  # ConfigMaps / supporting objects
+  - shared-env.yaml
+  - postgres-init.yaml

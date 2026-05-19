@@ -1,0 +1,20 @@
+.DS_Store
+.idea/
+*.log
+*.kubeconfig
+.vscode/
+node_modules/
+
+# MkDocs build output
+_site/
+site/
+
+# Python local venvs
+.venv/
+__pycache__/
+*.pyc
+
+# Local environment overrides
+.env
+.env.local
+

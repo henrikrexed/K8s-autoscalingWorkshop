@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+    dt.owner: otel-demo
+  annotations:
+    dt.owner: "otel-demo"
+    resource-optimization.dynatrace.com/enabled: "true"
+    resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-path: "otel-demo-light/postgres.yaml"
+    resource-optimization.dynatrace.com/github-branch: "main"
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        dt.owner: otel-demo
+      annotations:
+        dt.owner: "otel-demo"
+        resource-optimization.dynatrace.com/enabled: "true"
+        resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-path: "otel-demo-light/postgres.yaml"
+        resource-optimization.dynatrace.com/github-branch: "main"
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: shared-env
+          env:
+            - name: OTEL_SERVICE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-env
+                  key: OTEL_SERVICE_PREFIX
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)postgres"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=otel-demo"
+          resources:
+            limits:
+              memory: 80Mi
+            requests:
+              memory: 40Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "otel"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: postgres-init

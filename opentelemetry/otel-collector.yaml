@@ -1,0 +1,329 @@
+---
+# OpenTelemetry Collector configuration for the resource-optimization demo.
+#
+# Receives:
+#   - OTLP (gRPC/HTTP) from in-cluster apps (otel-demo-light services)
+#   - filelog from /var/log/pods (k8s container stdout/stderr)
+#
+# Processors:
+#   - memory_limiter
+#   - k8sattributes (enriches OTLP + filelog with pod/deployment metadata)
+#   - resourcedetection
+#   - cumulativetodelta (Dynatrace prefers delta-temporality metrics)
+#   - batch
+#
+# Exports:
+#   - OTLP/HTTP to ${DT_ENDPOINT}/api/v2/otlp using a token from the
+#     dynatrace-credentials Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: otel-collector
+  labels:
+    app: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+            max_recv_msg_size_mib: 16
+          http:
+            endpoint: 0.0.0.0:4318
+
+      # Pod logs from the host node's /var/log/pods. kubelet writes one
+      # symlinked log file per container under:
+      #   /var/log/pods/<namespace>_<pod-name>_<pod-uid>/<container>/N.log
+      # We tail every file and use a container parser to:
+      #   - decode the (CRI/containerd) frame
+      #   - lift k8s.namespace.name, k8s.pod.name, k8s.container.name
+      #     onto each record so k8sattributes can finish the enrichment.
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        exclude:
+          # Don't tail the collector's own logs (would cause an infinite loop)
+          - /var/log/pods/otel-collector_*/otel-collector/*.log
+        start_at: end
+        include_file_path: true
+        include_file_name: false
+        operators:
+          - id: container-parser
+            type: container
+            format: auto
+            add_metadata_from_filepath: true
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 384
+        spike_limit_mib: 96
+
+      # Enrich with k8s metadata using pod IP / pod UID associations.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: connection
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.deployment.name
+            - k8s.replicaset.name
+            - k8s.daemonset.name
+            - k8s.statefulset.name
+            - k8s.job.name
+            - k8s.node.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.pod.start_time
+          labels:
+            - tag_name: app
+              key: app
+              from: pod
+            - tag_name: dt.owner
+              key: dt.owner
+              from: pod
+          annotations:
+            - tag_name: resource-optimization.dynatrace.com/enabled
+              key: resource-optimization.dynatrace.com/enabled
+              from: pod
+            - tag_name: resource-optimization.dynatrace.com/github-repo
+              key: resource-optimization.dynatrace.com/github-repo
+              from: pod
+            - tag_name: resource-optimization.dynatrace.com/github-rep
+              key: resource-optimization.dynatrace.com/github-rep
+              from: pod
+            - tag_name: resource-optimization.dynatrace.com/github-path
+              key: resource-optimization.dynatrace.com/github-path
+              from: pod
+            - tag_name: resource-optimization.dynatrace.com/github-branch
+              key: resource-optimization.dynatrace.com/github-branch
+              from: pod
+
+      resourcedetection:
+        detectors: [env, system]
+        timeout: 5s
+        override: false
+
+      resource:
+        attributes:
+          - key: k8s.cluster.name
+            value: ${env:CLUSTER_NAME}
+            action: upsert
+
+      # Dynatrace ingests delta-temporality OTLP metrics. SDKs in
+      # opentelemetry-demo-light are configured for delta via
+      # OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta, but some
+      # libraries (notably Java auto-instrumentation and certain runtime
+      # metrics) emit cumulative regardless. Convert anything cumulative
+      # to delta here so the backend gets a consistent stream.
+      cumulativetodelta: {}
+
+      batch:
+        send_batch_size: 200
+        timeout: 5s
+        send_batch_max_size: 1000
+
+    exporters:
+      otlphttp/dynatrace:
+        endpoint: "${env:DT_ENDPOINT}"
+        headers:
+          Authorization: "Api-Token ${env:DT_API_TOKEN}"
+        compression: gzip
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+
+      debug:
+        verbosity: basic
+        sampling_initial: 5
+        sampling_thereafter: 200
+
+    service:
+      pipelines:
+        traces:
+          receivers:  [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, resource, batch]
+          exporters:  [otlphttp/dynatrace]
+        metrics:
+          receivers:  [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, resource, cumulativetodelta, batch]
+          exporters:  [otlphttp/dynatrace]
+        logs:
+          receivers:  [otlp, filelog]
+          processors: [memory_limiter, k8sattributes, resourcedetection, resource, batch]
+          exporters:  [otlphttp/dynatrace]
+      telemetry:
+        logs:
+          level: info
+
+---
+# DaemonSet — one collector per node so filelog can tail /var/log/pods on
+# the local host and k8sattributes can associate by pod IP (every pod on
+# the node hits its node-local collector).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  namespace: otel-collector
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8888"
+    spec:
+      serviceAccountName: otel-collector
+      # filelog needs to see container log files written by kubelet on the
+      # host — these are owned by root.  Running as root inside the pod is
+      # the simplest portable answer (alternative: fsGroup + a privileged
+      # init container that chown's the directory, which is more work).
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.103.0
+          args: ["--config=/conf/config.yaml"]
+          env:
+            - name: DT_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: dynatrace-credentials
+                  key: endpoint
+            - name: DT_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dynatrace-credentials
+                  key: api-token
+            - name: CLUSTER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: dynatrace-credentials
+                  key: cluster-name
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K8S_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # Drives the filelog `start_at` and helps the container parser
+            # detect the runtime; harmless on containerd.
+            - name: GOMAXPROCS
+              value: "2"
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: metrics
+              containerPort: 8888
+            - name: healthcheck
+              containerPort: 13133
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            # Pod log files (kubelet-written; one symlink per container).
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            # The pod log files symlink into containerd's per-container
+            # log directory; mount that too so the filelog reader can
+            # follow the symlinks.
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: varlogcontainers
+              mountPath: /var/log/containers
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+            type: DirectoryOrCreate
+        - name: varlogcontainers
+          hostPath:
+            path: /var/log/containers
+            type: DirectoryOrCreate
+
+---
+# Service — pods discover the collector via the K8S downward API node name
+# normally, but a stable Service makes it easy for non-DaemonSet clients
+# (load-generator k6 driver, etc.) to find a collector.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: otel-collector
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      appProtocol: grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: metrics
+      port: 8888
+      targetPort: 8888

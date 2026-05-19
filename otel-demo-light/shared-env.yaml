@@ -1,0 +1,61 @@
+# Shared env vars for every otel-demo-light service.
+#
+# Mirrors the `otel-demo.otelEnv` helper template from the upstream chart:
+#   helm/opentelemetry-demo-light/templates/_helpers.tpl
+# (with the {{ .Release.Name }}- prefix stripped, since our manifests use
+# plain Service names — cart, checkout, payment, etc.)
+#
+# Every Deployment/StatefulSet in this folder pulls these in with:
+#     envFrom:
+#       - configMapRef:
+#           name: shared-env
+# and only adds per-service OTEL_SERVICE_NAME / language-specific tweaks
+# on top.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-env
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/part-of: opentelemetry-demo-light
+    dt.owner: otel-demo
+data:
+  # ─── Per-attendee service-name prefix ─────────────────────────────────
+  # When multiple workshop attendees share one Dynatrace tenant, each
+  # attendee sets a short prefix (e.g. "REX-") so service names land as
+  # "REX-cart" / "REX-checkout" rather than colliding on "cart" / "checkout".
+  # Empty string (the default) means no prefix — service names stay
+  # vanilla "cart" / "checkout" / etc.
+  # Populated by deployment.sh from the $OTEL_SERVICE_PREFIX env var
+  # (Codespace secret of the same name); placeholder string below is
+  # substituted at apply time.
+  OTEL_SERVICE_PREFIX: "OTEL_SERVICE_PREFIX_TO_REPLACE"
+
+  # ─── OTLP exporter (every service ships to the in-cluster collector) ──
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.otel-collector.svc.cluster.local:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  # Dynatrace ingests delta-temporality OTLP metrics by default — keep
+  # services emitting delta so the collector's cumulativetodelta processor
+  # has nothing to do for them (still needed for kubelet/prometheus).
+  OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "delta"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_TRACES_EXPORTER: "otlp"
+
+  # ─── Service discovery — addresses other otel-demo-light services use ──
+  PRODUCT_CATALOG_ADDR: "product-catalog:3550"
+  CART_ADDR: "cart:7070"
+  CHECKOUT_ADDR: "checkout:5050"
+  PAYMENT_ADDR: "payment:6060"
+
+  # ─── PostgreSQL ────────────────────────────────────────────────────────
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "otel"
+  POSTGRES_PASSWORD: "otel"
+
+  # ─── Valkey (Redis-protocol cache for Cart) ────────────────────────────
+  VALKEY_ADDR: "valkey:6379"
+
+  # ─── Frontend ──────────────────────────────────────────────────────────
+  FRONTEND_PORT: "8080"

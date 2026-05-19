@@ -1,0 +1,62 @@
+# DynaKube — Dynatrace Operator custom resource.
+#
+# Mirrors github.com/Observe-Resolve/resource-optimization/blob/master/dynatrace/dynakube.yaml,
+# trimmed to the fields this demo actually uses.
+#
+# Two placeholders are substituted by deployment.sh at apply time:
+#   TENANTURL_TOREPLACE      → ${DT_TENANT_URL}
+#   CLUSTER_NAME_TO_REPLACE  → ${CLUSTERNAME}    (e.g. obs-optim)
+#
+# Injection scope:
+#   oneAgent.applicationMonitoring.namespaceSelector matches `oneagent: "true"`,
+#   so OneAgent is injected ONLY into namespaces explicitly labeled that way.
+#   The otel-demo namespace is labeled `oneagent: "false"` to make the
+#   exclusion intentional and unambiguous.
+apiVersion: dynatrace.com/v1beta5
+kind: DynaKube
+metadata:
+  name: dynakube
+  namespace: dynatrace
+  annotations:
+    feature.dynatrace.com/automatic-kubernetes-api-monitoring-cluster-name: "CLUSTER_NAME_TO_REPLACE"
+    feature.dynatrace.com/k8s-app-enabled: "true"
+    feature.dynatrace.com/automatic-kubernetes-api-monitoring: "true"
+    feature.dynatrace.com/label-version-detection: "true"
+spec:
+  # SaaS:    https://<env-id>.live.dynatrace.com/api
+  # Managed: https://<managed>/e/<env-id>/api
+  apiUrl: TENANTURL_TOREPLACE/api
+
+  # Skip cert checks — useful on trial tenants / self-signed Managed.
+  skipCertCheck: true
+
+  # Enrich every workload with Dynatrace topology metadata.
+  metadataEnrichment:
+    enabled: true
+
+  oneAgent:
+    # Application-only monitoring: a small init container injects the OneAgent
+    # codemodule into pods that land in selected namespaces. Doesn't require
+    # privileged host access (vs classicFullStack), so it's kind-friendly.
+    applicationMonitoring:
+      # ──────────────────────────────────────────────────────────────────
+      # Inject ONLY into namespaces explicitly labeled oneagent=true.
+      # otel-demo is labeled oneagent=false → not injected (we observe
+      # those workloads with the in-cluster OTel collector instead).
+      # ──────────────────────────────────────────────────────────────────
+      namespaceSelector:
+        matchLabels:
+          oneagent: "true"
+
+  activeGate:
+    capabilities:
+      - kubernetes-monitoring
+      - routing
+    image: ""
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1.5Gi

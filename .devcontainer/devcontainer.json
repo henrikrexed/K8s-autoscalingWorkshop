@@ -1,0 +1,60 @@
+{
+  "name": "Resource Optimization Demo (kind + Dynatrace)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "latest",
+      "minikube": "none"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": false,
+      "username": "vscode"
+    }
+  },
+
+  "remoteEnv": {
+    "DT_TENANT_URL":        "${localEnv:DT_TENANT_URL}",
+    "DT_API_TOKEN":         "${localEnv:DT_API_TOKEN}",
+    "DT_INGEST_TOKEN":      "${localEnv:DT_INGEST_TOKEN}",
+    "OTEL_SERVICE_PREFIX":  "${localEnv:OTEL_SERVICE_PREFIX}"
+  },
+
+  "containerEnv": {
+    "KUBECONFIG": "/home/vscode/.kube/config"
+  },
+
+  "onCreateCommand": "bash .devcontainer/install-tools.sh",
+  "postCreateCommand": "bash .devcontainer/bootstrap.sh",
+
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080":  { "label": "otel-demo-light frontend" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

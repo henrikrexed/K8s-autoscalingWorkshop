@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  labels:
+    app: cart
+    dt.owner: otel-demo
+  annotations:
+    dt.owner: "otel-demo"
+    resource-optimization.dynatrace.com/enabled: "true"
+    resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-path: "otel-demo-light/cart.yaml"
+    resource-optimization.dynatrace.com/github-branch: "main"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+        dt.owner: otel-demo
+      annotations:
+        dt.owner: "otel-demo"
+        resource-optimization.dynatrace.com/enabled: "true"
+        resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-path: "otel-demo-light/cart.yaml"
+        resource-optimization.dynatrace.com/github-branch: "main"
+    spec:
+      containers:
+        - name: cart
+          image: otel-demo-light/cart:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 7070
+          envFrom:
+            - configMapRef:
+                name: shared-env
+          env:
+            # Pull OTEL_SERVICE_PREFIX into an env entry FIRST so the
+            # $(VAR) expansion below can reference it. (Kubernetes only
+            # expands references to env entries defined earlier in the
+            # same container; envFrom values are NOT used for expansion.)
+            - name: OTEL_SERVICE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-env
+                  key: OTEL_SERVICE_PREFIX
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)cart"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=otel-demo"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-javaagent:/app/opentelemetry-javaagent.jar -Xmx128m"
+          resources:
+            limits:
+              memory: 200Mi
+            requests:
+              memory: 100Mi
+          readinessProbe:
+            exec:
+              command: ["/app/grpc_health_probe", "-addr=localhost:7070"]
+            initialDelaySeconds: 15
+            periodSeconds: 5

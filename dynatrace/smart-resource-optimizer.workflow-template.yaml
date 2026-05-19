@@ -1,0 +1,353 @@
+metadata:
+  version: '1'
+  dependencies:
+    apps:
+    - id: dynatrace.automations
+      version: ^1.2834.0
+    - id: dynatrace.github
+      version: ^0.3.2
+    - id: dynatrace.slack
+      version: ^3.4.1-dev.20260309T152540+3dcb6a8b
+  inputs:
+  - type: connection
+    schema: app:dynatrace.slack:connection
+    targets:
+    - tasks.send_slack_notification.connection
+  - type: connection
+    schema: app:dynatrace.github:connection
+    targets:
+    - tasks.github_update_file.connection
+    - tasks.github_create_pr.connection
+workflow:
+  title: Smart K8s Resource Optimizer
+  description: >
+    Queries Smartscape V2 for underutilized K8s workloads, adjusts CPU/memory
+    requests based on 7-day p95 usage, commits patched manifests to GitHub,
+    and notifies owners via Slack.
+  schemaVersion: 4
+  trigger: {}
+  result: null
+  type: STANDARD
+  input: {}
+  hourlyExecutionLimit: 1000
+  guide: null
+  tasks:
+    # ───────────────────────────────────────────────────────
+    # STEP 1: DQL — Collect underutilized workloads
+    # Grouped by workloadname with containers array
+    # ───────────────────────────────────────────────────────
+    collect_underutilized_workloads:
+      name: collect_underutilized_workloads
+      input:
+        query: "smartscapeNodes CONTAINER\n| fieldsRename containername=name\n| traverse\
+          \ is_part_of, K8S_POD, fieldsKeep:{id,containername}\n| fieldsAdd podname=\
+          \ k8s.pod.name, podid=id\n| traverse is_part_of, K8S_DEPLOYMENT,fieldsKeep:{podname,\
+          \ podid}\n| fieldsAdd podname = dt.traverse.history[1][podname], podid = dt.traverse.history[1][podid],\
+          \ containername=dt.traverse.history[0][containername],containerid=dt.traverse.history[0][id]\n\
+          | fieldsAdd Appnamespace = in(k8s.namespace.name, \"dynatrace\",\"kube-system\"\
+          ,\"falco\",\"kyverno\",\"gmp-system\",\"cert-manager\",\"kuma-system\",\"\
+          opentelemetry-operator-system\")\n| filter not Appnamespace\n| fieldsAdd\
+          \ optimization= if(isNotNull( `tags:k8s.annotations`[`resource-optimization.dynatrace.com/enabled`]),\
+          \ `tags:k8s.annotations`[`resource-optimization.dynatrace.com/enabled`],else:\
+          \ \"false\")\n| fieldsAdd owner= if(isNotNull( `tags:k8s.labels`[dt.owner]),\
+          \ `tags:k8s.labels`[dt.owner],else: \"NA\")\n| fieldsAdd github_repo= if(isNotNull(\
+          \ `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-rep`]),\
+          \ `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-rep`],else:\
+          \ \"NA\")\n| fieldsAdd github_path= if(isNotNull( `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-path`]),\
+          \ `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-path`],else:\
+          \ \"NA\")\n| fieldsAdd github_branch= if(isNotNull( `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-branch`]),\
+          \ `tags:k8s.annotations`[`resource-optimization.dynatrace.com/github-branch`],else:\
+          \ \"NA\")\n| fieldsAdd k8sobject= k8s.object\n| lookup [\n    timeseries\
+          \ memusagevalues = max(dt.kubernetes.container.memory_working_set ),memrequest_value=sum(dt.kubernetes.container.requests_memory\
+          \ ),cpusagevalues = max(dt.kubernetes.container.cpu_usage ),cpurequest_value=sum(dt.kubernetes.container.requests_cpu\
+          \ ) , by:{dt.smartscape.container}, from: -7d\n    | fieldsAdd request_memory\
+          \ = arrayPercentile(memrequest_value,95)\n    | fieldsAdd usage_memory =\
+          \ arrayPercentile(memusagevalues,95)\n    | fieldsAdd request_cpu = arrayPercentile(cpurequest_value,95)\n\
+          \    | fieldsAdd usage_cpu= arrayPercentile(cpusagevalues,95)\n    | fieldsAdd\
+          \ memratio = (usage_memory/request_memory) * 100\n    | fieldsAdd cpuratio\
+          \ = (usage_cpu/request_cpu) * 100\n  ], sourceField:containerid, lookupField:dt.smartscape.container,\
+          \ fields:{ memratio,usage_memory,request_memory,cpuratio,request_cpu,usage_cpu\
+          \ }\n| filter isNotNull(cpuratio) AND isNotNull(memratio) AND isNotNull(usage_cpu)\
+          \ AND isNotNull( usage_memory) AND isNotNull(request_cpu) AND isNotNull(request_memory)\n\
+          | filter (memratio < 60 or memratio> 110) or ( cpuratio < 30 or cpuratio\
+          \ > 110)\n| fieldsAdd cpurecommended= usage_cpu * 1.30 , memoryrecommened\
+          \ = usage_memory * 1.30\n| fields workloadid= id, containername, k8sobject,workloadname=k8s.workload.name,podname,\
+          \ clustername=k8s.cluster.name, owner, memratio, cpuratio, memoryrecommened,\
+          \ cpurecommended, usage_memory,request_memory,optimization, github_repo,\
+          \ github_path, github_branch , request_cpu\n| fieldsAdd memsaving= request_memory\
+          \ - memoryrecommened , cpusaving= request_cpu - cpurecommended\n| summarize\n\
+          \    k8sobject = takeFirst(k8sobject),\n    github_repo = takeFirst(github_repo),\n\
+          \    github_path = takeFirst(github_path),\n    github_branch = takeFirst(github_branch),\n\
+          \    owner = takeFirst(owner),\n    optimization = takeFirst(optimization),\n\
+          \    clustername = takeFirst(clustername),\n    containers = collectArray(\n\
+          \      record(\n        containername,\n        cpurecommended,\n        memoryrecommened,\n\
+          \        request_cpu,\n        request_memory,\n        cpuratio,\n        memratio,\n\
+          \        cpusaving,\n        memsaving\n      )\n    ),\n    by: { workloadname\
+          \ }"
+      action: dynatrace.automations:execute-dql-query
+      position:
+        x: 0
+        y: 1
+      description: >
+        Query Smartscape V2 for container resources with p95 usage over 7 days.
+        Groups results by workloadname with a containers array.
+      predecessors: []
+
+    # ───────────────────────────────────────────────────────
+    # STEP 2: JS — Filter, adjust resources, convert to YAML,
+    #         create branch, and prepare file list for GitHub actions
+    # ───────────────────────────────────────────────────────
+    filter_and_adjust:
+      name: filter_and_adjust
+      input:
+        script: "import { execution } from '@dynatrace-sdk/automation-utils';\n\ntype\
+          \ ContainerReco = {\n  containername: string\n  cpurecommended: number\n \
+          \ memoryrecommened: number\n  request_cpu: number\n  request_memory: number\n\
+          \  cpuratio: number\n  memratio: number\n  cpusaving: number\n  memsaving:\
+          \ number\n}\n\ntype ContainerChange = {\n  containername: string\n  original_cpu:\
+          \ string\n  original_memory: string\n  new_cpu: string\n  new_memory: string\n\
+          \  cpuratio: number\n  memratio: number\n  cpu_saving_percent: number\n  mem_saving_percent:\
+          \ number\n}\n\ntype PatchedWorkload = {\n  workloadname: string\n  clustername:\
+          \ string\n  owner: string\n  github_repo: string\n  github_path: string\n\
+          \  github_branch: string\n  containers: ContainerChange[]\n  yaml_content:\
+          \ string\n}\n\ntype FileEntry = {\n  owner: string\n  repo: string\n  path:\
+          \ string\n  yaml_content: string\n  branch: string\n  workloadname: string\n\
+          \  commit_message: string\n}\n\ntype Result = {\n  patches: PatchedWorkload[]\n\
+          \  files: FileEntry[]\n  skipped: { workloadname: string, reason: string }[]\n\
+          \  errors: { workloadname: string, error: string }[]\n  total_patched: number\n\
+          \  branch_name: string\n  base_branch: string\n  repo_owner: string\n  repo_name:\
+          \ string\n  pr_title: string\n  pr_body: string\n}\n\nfunction bytesToMi(bytes:\
+          \ number): string {\n  return `${Math.ceil(bytes / 1048576)}Mi`;\n}\n\nfunction\
+          \ millicoresToCpu(mc: number): string {\n  const rounded = Math.ceil(mc);\n\
+          \  if (rounded >= 1000 && rounded % 1000 === 0) return `${rounded / 1000}`;\n\
+          \  return `${rounded}m`;\n}\n\nfunction toYaml(obj: any, indent: number =\
+          \ 0): string {\n  const pad = '  '.repeat(indent);\n  if (obj === null ||\
+          \ obj === undefined) return 'null\\n';\n  if (typeof obj === 'boolean') return\
+          \ `${obj}\\n`;\n  if (typeof obj === 'number') return `${obj}\\n`;\n  if (typeof\
+          \ obj === 'string') {\n    if (obj === '' || obj === 'true' || obj === 'false'\
+          \ || obj === 'null' ||\n        obj.match(/[:{}\\[\\],&*?|>!%@`#'\"\\n]/)\
+          \ || obj.match(/^\\d/)) {\n      return `\"${obj.replace(/\\\\/g, '\\\\\\\\').replace(/\"\
+          /g, '\\\\\"')}\"\\n`;\n    }\n    return `${obj}\\n`;\n  }\n  if (Array.isArray(obj))\
+          \ {\n    if (obj.length === 0) return '[]\\n';\n    let out = '';\n    for\
+          \ (const item of obj) {\n      if (typeof item === 'object' && item !== null\
+          \ && !Array.isArray(item)) {\n        const keys = Object.keys(item);\n   \
+          \     if (keys.length === 0) { out += `${pad}- {}\\n`; continue; }\n      \
+          \  out += `${pad}- ${keys[0]}: ${toYaml(item[keys[0]], indent + 2).trimStart()}`;\n\
+          \        for (let i = 1; i < keys.length; i++) {\n          out += `${pad}\
+          \  ${keys[i]}: ${toYaml(item[keys[i]], indent + 2).trimStart()}`;\n       \
+          \ }\n      } else {\n        out += `${pad}- ${toYaml(item, indent + 1).trimStart()}`;\n\
+          \      }\n    }\n    return out;\n  }\n  const keys = Object.keys(obj);\n \
+          \ if (keys.length === 0) return '{}\\n';\n  let out = '';\n  for (const key\
+          \ of keys) {\n    const val = obj[key];\n    if (typeof val === 'object' &&\
+          \ val !== null) {\n      out += `${pad}${key}:\\n${toYaml(val, indent + 1)}`;\n\
+          \    } else {\n      out += `${pad}${key}: ${toYaml(val, indent + 1).trimStart()}`;\n\
+          \    }\n  }\n  return out;\n}\n\nexport default async function ({ execution_id\
+          \ }) {\n  const ex = await execution(execution_id);\n  console.log('Automated\
+          \ script execution on behalf of', ex.trigger);\n\n  const result = await ex.result('collect_underutilized_workloads');\n\
+          \n  if (!result || !result.records || result.records.length === 0) {\n    const\
+          \ empty: Result = { patches: [], files: [], skipped: [], errors: [], total_patched:\
+          \ 0, branch_name: '', base_branch: '', repo_owner: '', repo_name: '', pr_title:\
+          \ '', pr_body: '' };\n    return empty;\n  }\n\n  const patches: PatchedWorkload[]\
+          \ = [];\n  const skipped: { workloadname: string, reason: string }[] = [];\n\
+          \  const errors: { workloadname: string, error: string }[] = [];\n\n  for\
+          \ (const workload of result.records) {\n    if (workload.optimization !== \"\
+          true\") {\n      skipped.push({ workloadname: workload.workloadname, reason:\
+          \ 'optimization not enabled' });\n      continue;\n    }\n    if (!workload.github_path\
+          \ || workload.github_path === \"NA\" ||\n        !workload.github_repo || workload.github_repo\
+          \ === \"NA\") {\n      skipped.push({ workloadname: workload.workloadname,\
+          \ reason: 'missing GitHub annotations' });\n      continue;\n    }\n    if\
+          \ (!workload.k8sobject) {\n      skipped.push({ workloadname: workload.workloadname,\
+          \ reason: 'no k8s manifest from Smartscape' });\n      continue;\n    }\n\n\
+          \    try {\n      const k8sObj = JSON.parse(workload.k8sobject);\n      const\
+          \ manifestContainers = k8sObj?.spec?.template?.spec?.containers;\n      if\
+          \ (!manifestContainers || !Array.isArray(manifestContainers)) {\n        errors.push({\
+          \ workloadname: workload.workloadname, error: 'No containers in manifest'\
+          \ });\n        continue;\n      }\n\n      const containerChanges: ContainerChange[]\
+          \ = [];\n\n      for (const reco of workload.containers as ContainerReco[])\
+          \ {\n        const idx = manifestContainers.findIndex((c: any) => c.name ===\
+          \ reco.containername);\n        if (idx === -1) {\n          console.log(`Container\
+          \ \"${reco.containername}\" not found in ${workload.workloadname}`);\n    \
+          \      continue;\n        }\n        const container = manifestContainers[idx];\n\
+          \        const originalCpu = container.resources?.requests?.cpu || 'not set';\n\
+          \        const originalMemory = container.resources?.requests?.memory || 'not\
+          \ set';\n        const newCpu = millicoresToCpu(reco.cpurecommended);\n   \
+          \     const newMemory = bytesToMi(reco.memoryrecommened);\n\n        if (!container.resources)\
+          \ container.resources = {};\n        if (!container.resources.requests) container.resources.requests\
+          \ = {};\n        if (!container.resources.limits) container.resources.limits\
+          \ = {};\n\n        container.resources.requests.cpu = newCpu;\n        container.resources.requests.memory\
+          \ = newMemory;\n        container.resources.limits.cpu = millicoresToCpu(reco.cpurecommended\
+          \ * 2);\n        container.resources.limits.memory = bytesToMi(reco.memoryrecommened\
+          \ * 2);\n        manifestContainers[idx] = container;\n\n        const cpuSaving\
+          \ = reco.request_cpu > 0 ? Math.round(((reco.request_cpu - reco.cpurecommended)\
+          \ / reco.request_cpu) * 100) : 0;\n        const memSaving = reco.request_memory\
+          \ > 0 ? Math.round(((reco.request_memory - reco.memoryrecommened) / reco.request_memory)\
+          \ * 100) : 0;\n\n        containerChanges.push({\n          containername:\
+          \ reco.containername,\n          original_cpu: originalCpu,\n          original_memory:\
+          \ originalMemory,\n          new_cpu: newCpu,\n          new_memory: newMemory,\n\
+          \          cpuratio: reco.cpuratio,\n          memratio: reco.memratio,\n \
+          \         cpu_saving_percent: cpuSaving,\n          mem_saving_percent: memSaving\n\
+          \        });\n        console.log(`${workload.workloadname}/${reco.containername}:\
+          \ CPU ${originalCpu}->${newCpu}, Mem ${originalMemory}->${newMemory}`);\n \
+          \     }\n\n      if (containerChanges.length > 0) {\n        const yamlContent\
+          \ = toYaml(k8sObj);\n        patches.push({\n          workloadname: workload.workloadname,\n\
+          \          clustername: workload.clustername,\n          owner: workload.owner,\n\
+          \          github_repo: workload.github_repo,\n          github_path: workload.github_path,\n\
+          \          github_branch: workload.github_branch || 'main',\n          containers:\
+          \ containerChanges,\n          yaml_content: yamlContent\n        });\n   \
+          \   }\n    } catch (e) {\n      errors.push({ workloadname: workload.workloadname,\
+          \ error: `Parse error: ${e.message}` });\n    }\n  }\n\n  // Prepare flat\
+          \ file list for the GitHub update file action (withItems)\n  const ts = new\
+          \ Date().toISOString().slice(0, 10);\n  const branchName = `resource-optimization/${ts}-${Date.now()}`;\n\
+          \  const files: FileEntry[] = [];\n\n  // Extract repo owner/name from first\
+          \ patch (assumes single repo)\n  let repoOwner = '';\n  let repoName = '';\n\
+          \  let baseBranch = 'main';\n\n  for (const patch of patches) {\n    const\
+          \ repo = patch.github_repo.replace('github.com/', '');\n    const [owner,\
+          \ name] = repo.split('/');\n    if (!repoOwner) { repoOwner = owner; repoName\
+          \ = name; baseBranch = patch.github_branch; }\n\n    files.push({\n      owner:\
+          \ owner,\n      repo: name,\n      path: patch.github_path,\n      yaml_content:\
+          \ patch.yaml_content,\n      branch: branchName,\n      workloadname: patch.workloadname,\n\
+          \      commit_message: `chore: optimize resources for ${patch.workloadname}`\n\
+          \    });\n  }\n\n  // Create the feature branch via GitHub API\n  if (repoOwner\
+          \ && repoName && files.length > 0) {\n    try {\n      const refResp = await\
+          \ fetch(\n        `https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${baseBranch}`,\n\
+          \        { headers: { 'Authorization': `Bearer ${globalThis.GITHUB_TOKEN}`,\
+          \ 'Accept': 'application/vnd.github.v3+json' } }\n      );\n      if (!refResp.ok)\
+          \ throw new Error(`GET ref: ${refResp.status}`);\n      const baseSha = (await\
+          \ refResp.json()).object.sha;\n\n      const branchResp = await fetch(\n  \
+          \      `https://api.github.com/repos/${repoOwner}/${repoName}/git/refs`,\n\
+          \        { method: 'POST', headers: { 'Authorization': `Bearer ${globalThis.GITHUB_TOKEN}`,\
+          \ 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json'\
+          \ },\n          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha:\
+          \ baseSha }) }\n      );\n      if (!branchResp.ok) throw new Error(`Create\
+          \ branch: ${branchResp.status}`);\n      console.log(`Branch \"${branchName}\"\
+          \ created on ${repoOwner}/${repoName}`);\n    } catch (e) {\n      console.log(`Error\
+          \ creating branch: ${e.message}`);\n      errors.push({ workloadname: 'branch-creation',\
+          \ error: e.message });\n    }\n  }\n\n  // Build PR body\n  let prBody = `##\
+          \ Kubernetes Resource Optimization\\n\\n`;\n  prBody += `**Generated:** ${new\
+          \ Date().toISOString()}\\n`;\n  prBody += `**Source:** Dynatrace Smart Resource\
+          \ Optimizer (Smartscape V2)\\n\\n`;\n  prBody += `### Resource Changes\\n\\\
+          n`;\n  prBody += `| Workload | Container | CPU | Memory | CPU Util | Mem Util\
+          \ | CPU Saved | Mem Saved |\\n`;\n  prBody += `|----------|-----------|-----|--------|----------|----------|----------|----------|\\n`;\n\
+          \  for (const p of patches) {\n    for (const c of p.containers) {\n      prBody\
+          \ += `| ${p.workloadname} | ${c.containername} | ${c.original_cpu} -> ${c.new_cpu}\
+          \ | ${c.original_memory} -> ${c.new_memory} | ${Math.round(c.cpuratio)}% |\
+          \ ${Math.round(c.memratio)}% | ${c.cpu_saving_percent}% | ${c.mem_saving_percent}%\
+          \ |\\n`;\n    }\n  }\n  prBody += `\\n### Method\\n\\n`;\n  prBody += `- **Observation\
+          \ window:** 7 days (p95)\\n`;\n  prBody += `- **Buffer:** 30% headroom\\n`;\n\
+          \  prBody += `- **Limits:** 2x new requests\\n`;\n  prBody += `- **Threshold:**\
+          \ Mem <60%/>110%, CPU <30%/>110%\\n\\n`;\n  prBody += `---\\n*Automated by\
+          \ Dynatrace Smart K8s Resource Optimizer*\\n`;\n\n  const prTitle = `chore:\
+          \ optimize resource requests for ${patches.length} workload${patches.length\
+          \ > 1 ? 's' : ''}`;\n\n  console.log(`Done: ${patches.length} workloads patched,\
+          \ ${skipped.length} skipped, ${errors.length} errors`);\n\n  const res: Result\
+          \ = {\n    patches: patches,\n    files: files,\n    skipped: skipped,\n  \
+          \  errors: errors,\n    total_patched: patches.length,\n    branch_name: branchName,\n\
+          \    base_branch: baseBranch,\n    repo_owner: repoOwner,\n    repo_name: repoName,\n\
+          \    pr_title: prTitle,\n    pr_body: prBody\n  };\n  return res;\n}"
+      action: dynatrace.automations:run-javascript
+      position:
+        x: 0
+        y: 2
+      conditions:
+        custom: '{{ result("collect_underutilized_workloads").records | length >0 }}'
+        states:
+          collect_underutilized_workloads: OK
+      description: >
+        Filter optimizable workloads, adjust CPU/memory in k8sobject,
+        convert to YAML, create feature branch, prepare file list for GitHub actions.
+      predecessors:
+      - collect_underutilized_workloads
+
+    # ───────────────────────────────────────────────────────
+    # STEP 3: GitHub Action — Update file (one per workload)
+    # Uses withItems to commit each patched manifest
+    # ───────────────────────────────────────────────────────
+    github_update_file:
+      name: github_update_file
+      input:
+        owner: '{{ _.item.owner }}'
+        repo: '{{ _.item.repo }}'
+        path: '{{ _.item.path }}'
+        message: '{{ _.item.commit_message }}'
+        content: '{{ _.item.yaml_content }}'
+        branch: '{{ _.item.branch }}'
+        connection: ''
+      action: dynatrace.github:github-create-or-update-file-content
+      active: true
+      position:
+        x: 0
+        y: 3
+      conditions:
+        custom: '{{ result("filter_and_adjust").files | length > 0 }}'
+        states:
+          filter_and_adjust: OK
+      withItems: item in {{ result("filter_and_adjust").files }}
+      concurrency: 1
+      description: >
+        Commit each patched manifest YAML to the feature branch.
+        Iterates over the files array from filter_and_adjust.
+      predecessors:
+      - filter_and_adjust
+
+    # ───────────────────────────────────────────────────────
+    # STEP 4: GitHub Action — Create Pull Request
+    # ───────────────────────────────────────────────────────
+    github_create_pr:
+      name: github_create_pr
+      input:
+        owner: '{{ result("filter_and_adjust").repo_owner }}'
+        repo: '{{ result("filter_and_adjust").repo_name }}'
+        title: '{{ result("filter_and_adjust").pr_title }}'
+        body: '{{ result("filter_and_adjust").pr_body }}'
+        head: '{{ result("filter_and_adjust").branch_name }}'
+        base: '{{ result("filter_and_adjust").base_branch }}'
+        connection: ''
+      action: dynatrace.github:github-create-pull-request
+      active: true
+      position:
+        x: 0
+        y: 4
+      conditions:
+        states:
+          github_update_file: OK
+      description: Create a Pull Request from the feature branch with a comparison table.
+      predecessors:
+      - github_update_file
+
+    # ───────────────────────────────────────────────────────
+    # STEP 5: Slack — Send optimization summary
+    # ───────────────────────────────────────────────────────
+    send_slack_notification:
+      name: send_slack_notification
+      input:
+        channel: C0XXXXXXXXX
+        message: "*K8s Resource Optimization Complete*\n\n*Workloads patched:* {{\
+          \ result(\"filter_and_adjust\").total_patched }}\n\n{% for patch in result(\"\
+          filter_and_adjust\").patches %}\n*{{ patch.workloadname }}* ({{ patch.owner\
+          \ }}):\n{% for c in patch.containers %}\n  - {{ c.containername }}: CPU {{\
+          \ c.original_cpu }} -> {{ c.new_cpu }}, Mem {{ c.original_memory }} -> {{\
+          \ c.new_memory }}\n{% endfor %}\n{% endfor %}\n\n{% if result(\"filter_and_adjust\"\
+          ).skipped | length > 0 %}\n_Skipped {{ result(\"filter_and_adjust\").skipped\
+          \ | length }} workloads (optimization not enabled or missing annotations)_\n\
+          {% endif %}"
+        reaction:
+        - eyes
+        connection: ''
+        workflowID: '{{ execution().workflow.id }}'
+        channelType: id
+        executionID: '{{ execution().id }}'
+        executionDate: '{{ execution().started_at }}'
+        appendToThread: false
+        selectedRequestType: 0
+        attachmentToggleValue: none
+      action: dynatrace.slack:slack-send-message
+      active: true
+      position:
+        x: 0
+        y: 5
+      conditions:
+        states:
+          github_create_pr: OK
+      description: Send optimization summary to Slack with per-container changes.
+      predecessors:
+      - github_create_pr

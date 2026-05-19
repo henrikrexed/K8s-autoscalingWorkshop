@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment
+  labels:
+    app: payment
+    dt.owner: otel-demo
+  annotations:
+    dt.owner: "otel-demo"
+    resource-optimization.dynatrace.com/enabled: "true"
+    resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-path: "otel-demo-light/payment.yaml"
+    resource-optimization.dynatrace.com/github-branch: "main"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+        dt.owner: otel-demo
+      annotations:
+        dt.owner: "otel-demo"
+        resource-optimization.dynatrace.com/enabled: "true"
+        resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-path: "otel-demo-light/payment.yaml"
+        resource-optimization.dynatrace.com/github-branch: "main"
+    spec:
+      containers:
+        - name: payment
+          image: otel-demo-light/payment:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6060
+          envFrom:
+            - configMapRef:
+                name: shared-env
+          env:
+            - name: OTEL_SERVICE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-env
+                  key: OTEL_SERVICE_PREFIX
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)payment"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=otel-demo"
+          resources:
+            limits:
+              memory: 10Mi
+            requests:
+              memory: 5Mi
+          readinessProbe:
+            exec:
+              command: ["/app/grpc_health_probe", "-addr=localhost:6060"]
+            initialDelaySeconds: 3
+            periodSeconds: 5

@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  labels:
+    app: load-generator
+    dt.owner: otel-demo
+  annotations:
+    dt.owner: "otel-demo"
+    resource-optimization.dynatrace.com/enabled: "true"
+    resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+    resource-optimization.dynatrace.com/github-path: "otel-demo-light/load-generator-otel.yaml"
+    resource-optimization.dynatrace.com/github-branch: "main"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: load-generator
+  template:
+    metadata:
+      labels:
+        app: load-generator
+        dt.owner: otel-demo
+      annotations:
+        dt.owner: "otel-demo"
+        resource-optimization.dynatrace.com/enabled: "true"
+        resource-optimization.dynatrace.com/github-repo: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-rep: "github.com/henrikrexed/K8s-autoscalingWorkshop"
+        resource-optimization.dynatrace.com/github-path: "otel-demo-light/load-generator-otel.yaml"
+        resource-optimization.dynatrace.com/github-branch: "main"
+    spec:
+      containers:
+        - name: load-generator
+          image: ghcr.io/henrikrexed/henrikrexed-xk6-output-opentelemetry:latest
+          args:
+            - run
+            - --out
+            - opentelemetry
+            - /scripts/test.js
+          envFrom:
+            - configMapRef:
+                name: shared-env
+          env:
+            - name: OTEL_SERVICE_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-env
+                  key: OTEL_SERVICE_PREFIX
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)load-generator"
+            # k6 reads its service name from its own env var; expand the
+            # same prefix into it so traces from the load generator land
+            # in the same per-attendee service bucket.
+            - name: K6_OTEL_SERVICE_NAME
+              value: "$(OTEL_SERVICE_PREFIX)load-generator"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=otel-demo"
+            - name: FRONTEND_URL
+              value: http://frontend:8080
+            - name: K6_VUS
+              value: "5"
+            - name: K6_DURATION
+              value: "0"
+            - name: K6_OTEL_GRPC_EXPORTER_INSECURE
+              value: "true"
+            - name: K6_OTEL_EXPORTER_OTLP_ENDPOINT
+              value: otel-collector:4317
+            - name: K6_OTEL_SERVICE_NAME
+              value: load-generator
+            - name: K6_OTEL_TRACES_ENABLED
+              value: "true"
+            - name: K6_OTEL_METRICS_ENABLED
+              value: "true"
+            - name: K6_OTEL_BAGGAGE_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: test-script
+              mountPath: /scripts/test.js
+              subPath: test.js
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              memory: 64Mi
+      volumes:
+        - name: test-script
+          configMap:
+            name: k6-test-script
