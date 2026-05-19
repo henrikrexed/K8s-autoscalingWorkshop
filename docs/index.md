@@ -15,11 +15,11 @@ By the end of this workshop you'll have:
 - The [`opentelemetry-demo-light`](https://github.com/henrikrexed/opentelemetry-demo-light) application (5 microservices, postgres, valkey, k6 load generator)
 - An OpenTelemetry Collector shipping traces / metrics / logs to your Dynatrace tenant — including pod logs via the **filelog** receiver and **cumulative-to-delta** metric conversion
 - The Dynatrace Operator with a **DynaKube** (namespace-scoped — only namespaces labeled `oneagent=true` get OneAgent injection)
-- A Dynatrace **notebook** + **workflow** (pre-provisioned on the trial tenant) that:
+- A Dynatrace **notebook** (pre-provisioned) + **workflow** (imported from a template in this repo) that:
     1. Queries Smartscape for workloads where latency correlates with resource usage
     2. Computes optimal CPU/memory based on 7-day p95 usage
     3. Patches the manifest in **your fork** of this repo via the GitHub Contents API
-    4. Opens a pull request — and optionally notifies Slack
+    4. Opens a pull request with the proposed changes
 
 ## Architecture
 
@@ -36,7 +36,7 @@ graph LR
     subgraph Dynatrace
         tenant["Tenant<br/>(SaaS / Managed)"]
         notebook["Notebook<br/>Smartscape Resource allocation"]
-        workflow["Workflow<br/>Smart Resource Optimizer"]
+        workflow["Workflow<br/>Smart K8s Resource Optimizer"]
     end
     subgraph GitHub
         fork["Your fork<br/>K8s-autoscalingWorkshop"]

@@ -69,6 +69,24 @@ Copy this token too.
 !!! warning "Keep the tokens private"
     These tokens grant write access to your tenant. Treat them like passwords. The Codespace secret mechanism encrypts them and never displays them after creation.
 
+## Gather Details: Create a GitHub Personal Access Token
+
+The Dynatrace workflow needs a **GitHub connection** to commit optimized manifests and open pull requests against your fork. This connection uses a GitHub Personal Access Token (PAT).
+
+1. Go to [github.com/settings/tokens?type=beta](https://github.com/settings/tokens?type=beta) (fine-grained tokens)
+2. Click **Generate new token**
+3. Give it a name (e.g. `dynatrace-resource-optimizer`)
+4. Under **Repository access**, select **Only select repositories** and pick your fork of `K8s-autoscalingWorkshop`
+5. Under **Permissions → Repository permissions**, grant:
+    - `Contents` — **Read and write** (to commit patched manifests)
+    - `Pull requests` — **Read and write** (to open PRs)
+6. Click **Generate token** and copy it
+
+You'll use this token when configuring the GitHub connection in Dynatrace (during the workshop).
+
+!!! tip "Classic tokens work too"
+    If you prefer a classic PAT, go to [github.com/settings/tokens](https://github.com/settings/tokens) and create one with the `repo` scope. Fine-grained tokens are recommended because they limit access to a single repository.
+
 ## Fork the Repository
 
 Go to [github.com/henrikrexed/K8s-autoscalingWorkshop](https://github.com/henrikrexed/K8s-autoscalingWorkshop) and click **Fork** in the top-right corner.
@@ -112,8 +130,8 @@ The Codespace will:
 5. Deploy the OpenTelemetry Collector (DaemonSet, with filelog receiver and cumulativetodelta processor)
 6. Deploy the `otel-demo-light` workload (frontend, cart, checkout, payment, product-catalog, postgres, valkey, k6 load generator)
 
-The resource-optimization **notebook** and **workflow** are already
-pre-provisioned on the trial Dynatrace tenant — you'll open them directly
-in the Dynatrace UI in the next step.
+The resource-optimization **notebook** is pre-provisioned on the trial
+Dynatrace tenant. The **workflow** needs to be imported from the template
+file included in this repo — you'll do that in the next step.
 
-Watch the terminal — the whole thing takes 5-8 minutes. When you see the green summary, [continue to the Workshop page](workshop.md).
+Watch the terminal — when you see the green summary, [continue to the Workshop page](workshop.md).

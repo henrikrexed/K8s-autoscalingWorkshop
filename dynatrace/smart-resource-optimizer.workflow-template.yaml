@@ -6,13 +6,7 @@ metadata:
       version: ^1.2834.0
     - id: dynatrace.github
       version: ^0.3.2
-    - id: dynatrace.slack
-      version: ^3.4.1-dev.20260309T152540+3dcb6a8b
   inputs:
-  - type: connection
-    schema: app:dynatrace.slack:connection
-    targets:
-    - tasks.send_slack_notification.connection
   - type: connection
     schema: app:dynatrace.github:connection
     targets:
@@ -23,7 +17,7 @@ workflow:
   description: >
     Queries Smartscape V2 for underutilized K8s workloads, adjusts CPU/memory
     requests based on 7-day p95 usage, commits patched manifests to GitHub,
-    and notifies owners via Slack.
+    and opens a pull request with the proposed changes.
   schemaVersion: 4
   trigger: {}
   result: null
@@ -314,40 +308,3 @@ workflow:
       predecessors:
       - github_update_file
 
-    # ───────────────────────────────────────────────────────
-    # STEP 5: Slack — Send optimization summary
-    # ───────────────────────────────────────────────────────
-    send_slack_notification:
-      name: send_slack_notification
-      input:
-        channel: C0XXXXXXXXX
-        message: "*K8s Resource Optimization Complete*\n\n*Workloads patched:* {{\
-          \ result(\"filter_and_adjust\").total_patched }}\n\n{% for patch in result(\"\
-          filter_and_adjust\").patches %}\n*{{ patch.workloadname }}* ({{ patch.owner\
-          \ }}):\n{% for c in patch.containers %}\n  - {{ c.containername }}: CPU {{\
-          \ c.original_cpu }} -> {{ c.new_cpu }}, Mem {{ c.original_memory }} -> {{\
-          \ c.new_memory }}\n{% endfor %}\n{% endfor %}\n\n{% if result(\"filter_and_adjust\"\
-          ).skipped | length > 0 %}\n_Skipped {{ result(\"filter_and_adjust\").skipped\
-          \ | length }} workloads (optimization not enabled or missing annotations)_\n\
-          {% endif %}"
-        reaction:
-        - eyes
-        connection: ''
-        workflowID: '{{ execution().workflow.id }}'
-        channelType: id
-        executionID: '{{ execution().id }}'
-        executionDate: '{{ execution().started_at }}'
-        appendToThread: false
-        selectedRequestType: 0
-        attachmentToggleValue: none
-      action: dynatrace.slack:slack-send-message
-      active: true
-      position:
-        x: 0
-        y: 5
-      conditions:
-        states:
-          github_create_pr: OK
-      description: Send optimization summary to Slack with per-container changes.
-      predecessors:
-      - github_create_pr

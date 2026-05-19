@@ -47,7 +47,7 @@ The OneAgent + ActiveGate data your tenant collected will age out naturally acco
 2. **Settings → Hosts** → mark any reported hosts as decommissioned
 3. **Logs** + **Metrics** age out per your retention policy — no manual purge needed
 
-The pre-provisioned **notebook** and **workflow** stay on the trial tenant for the next workshop session. Leave them alone.
+The pre-provisioned **notebook** stays on the trial tenant for the next workshop session. You can delete the imported **workflow** from the Workflows app if you no longer need it.
 
 ## Delete the fork (optional)
 

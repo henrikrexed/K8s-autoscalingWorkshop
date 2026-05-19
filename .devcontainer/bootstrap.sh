@@ -9,8 +9,9 @@
 #   3. deploys the OpenTelemetry Collector wired to Dynatrace
 #   4. deploys opentelemetry-demo-light into the cluster
 #
-# The resource-optimization notebook + workflow are pre-provisioned on the
-# trial Dynatrace tenant — no dtctl step here.
+# The resource-optimization notebook is pre-provisioned on the trial
+# Dynatrace tenant. The workflow template is imported by each attendee
+# via the Dynatrace Workflows UI.
 
 set -euo pipefail
 

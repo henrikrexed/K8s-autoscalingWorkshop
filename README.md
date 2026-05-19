@@ -8,8 +8,9 @@ cluster inside the Codespace, deploys
 [`opentelemetry-demo-light`](https://github.com/henrikrexed/opentelemetry-demo-light)
 as the workload, and ships all telemetry to your Dynatrace tenant through an
 OpenTelemetry Collector. The resource-optimization **notebook** and
-**workflow** are pre-provisioned on the trial tenant you've been invited to —
-nothing to install on the Dynatrace side.
+**workflow** drive the optimization loop. The notebook is pre-provisioned on
+the trial tenant; the workflow template is included in this repo and imported
+by each attendee during the workshop.
 
 📖 **Full workshop docs:** https://henrikrexed.github.io/K8s-autoscalingWorkshop/
 
@@ -24,7 +25,7 @@ nothing to install on the Dynatrace side.
 | OpenTelemetry Collector (DaemonSet) | namespace `otel-collector` | OTLP from the demo, pod logs via filelog, cumulative-to-delta metrics, exports to Dynatrace |
 | `opentelemetry-demo-light` | namespace `otel-demo` | the demo microservice application (lighter fork of the OTel demo) |
 | Notebook *Smartscape Resource allocation* | Dynatrace tenant (pre-provisioned) | DQL extracting workloads where latency correlates with resource usage |
-| Workflow *Smart Resource Optimizer* | Dynatrace tenant (pre-provisioned) | adjusts CPU/memory requests, opens a PR against your fork, optionally posts to Slack |
+| Workflow *Smart K8s Resource Optimizer* | Dynatrace tenant (imported by attendee) | adjusts CPU/memory requests, opens a PR against your fork |
 
 ## Workshop flow
 

@@ -29,7 +29,8 @@ if ! command -v kind >/dev/null 2>&1; then
 fi
 
 # dtctl is intentionally NOT installed — the resource-optimization notebook
-# and workflow are pre-provisioned on the trial tenant.
+# is pre-provisioned on the trial tenant and the workflow is imported by
+# each attendee via the Dynatrace Workflows UI.
 
 echo "==> Versions"
 docker version --format '{{.Client.Version}}' || true

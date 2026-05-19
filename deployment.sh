@@ -11,8 +11,8 @@
 #   4. Deploys the opentelemetry-demo-light application (namespace labeled
 #      oneagent=false, so it's observed via OTLP, NOT via OneAgent injection)
 #
-# The notebook and workflow are pre-provisioned on the trial Dynatrace
-# tenant you've been invited to — no dtctl install step needed.
+# The notebook is pre-provisioned on the trial Dynatrace tenant. The
+# workflow template is imported by each attendee via the Workflows UI.
 #
 # Parameters (also read from environment variables of the same name):
 #   --clustername        name of the kind cluster (default: obs-optim)
@@ -241,8 +241,8 @@ kubectl -n otel-demo wait --for=condition=Available --all deployments --timeout=
 ###############################################################################
 # Done
 #
-# The resource-optimization notebook and workflow are pre-provisioned on the
-# trial Dynatrace tenant you've been invited to — no dtctl step needed here.
+# The resource-optimization notebook is pre-provisioned on the trial
+# Dynatrace tenant. The workflow is imported by each attendee.
 ###############################################################################
 cat <<EOF
 

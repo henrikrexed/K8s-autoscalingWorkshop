@@ -49,9 +49,9 @@ You'll receive these in the chat or via the workshop landing page. **Paste them 
 | **Tenant ID** | `<this tenant — paste the ID part into `DT_ENVIRONMENT_ID`>` |
 | **Environment type** | `live` |
 | **Notebook** | `Smartscape Resource allocation` (already deployed — find it in the Notebooks app) |
-| **Workflow** | `Smart Resource Optimizer` (already deployed — find it in the Workflows app) |
+| **Workflow** | `Smart K8s Resource Optimizer` (import from `dynatrace/smart-resource-optimizer.workflow-template.yaml` via Workflows → Upload) |
 
-The notebook + workflow are **pre-provisioned**. You don't need to run any `dtctl` commands locally.
+The notebook is **pre-provisioned**. The workflow template is included in the repo at `dynatrace/smart-resource-optimizer.workflow-template.yaml` — you'll import it via **Workflows → Upload** during the workshop.
 
 ---
 
@@ -108,7 +108,7 @@ The notebook + workflow are **pre-provisioned**. You don't need to run any `dtct
 │                │  latency ↔ resource usage              │       │
 │                ▼                                        │       │
 │      🤖  Workflow                                       │       │
-│          Smart Resource Optimizer                       │       │
+│          Smart K8s Resource Optimizer                    │       │
 │            • runs DQL on Smartscape                     │       │
 │            • computes new requests from 7-day p95       │       │
 │            • patches manifest in your fork ────────────▶│       │
