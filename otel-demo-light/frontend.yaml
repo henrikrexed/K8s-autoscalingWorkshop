@@ -32,7 +32,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/henrikrexed/opentelemetry-demo-light/frontend:0.1.0
+          image: ghcr.io/henrikrexed/opentelemetry-demo-light/frontend:0.0.13
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
