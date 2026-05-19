@@ -1,0 +1,6 @@
+# Python packages required to build the MkDocs site (.github/workflows/docs.yml).
+# Pinned for reproducible CI builds; bump deliberately, not opportunistically.
+mkdocs==1.6.1
+mkdocs-material==9.6.21
+mkdocs-mermaid2-plugin==1.1.1
+pymdown-extensions==10.11.2
