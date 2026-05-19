@@ -20,6 +20,24 @@
     }
   },
 
+  "secrets": {
+    "DT_ENVIRONMENT_ID": {
+      "description": "Dynatrace tenant ID, e.g. abc12345 from https://abc12345.live.dynatrace.com"
+    },
+    "DT_ENVIRONMENT_TYPE": {
+      "description": "Environment type: live, sprint, or dev. Defaults to live"
+    },
+    "DT_OPERATOR_TOKEN": {
+      "description": "Dynatrace Operator token with: InstallerDownload, DataExport, settings.read, settings.write, entities.read, activeGateTokenManagement.create"
+    },
+    "DT_API_TOKEN": {
+      "description": "Dynatrace Ingest token with: metrics.ingest, logs.ingest, events.ingest, openTelemetryTrace.ingest"
+    },
+    "OTEL_SERVICE_PREFIX": {
+      "description": "Optional short prefix for service names (e.g. REX-) to avoid collisions when sharing a tenant"
+    }
+  },
+
   "remoteEnv": {
     "DT_ENVIRONMENT_ID":    "${localEnv:DT_ENVIRONMENT_ID}",
     "DT_ENVIRONMENT_TYPE":  "${localEnv:DT_ENVIRONMENT_TYPE}",
