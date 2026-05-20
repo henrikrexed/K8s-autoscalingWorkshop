@@ -15,6 +15,7 @@ namespace: otel-demo
 
 resources:
   - namespace.yaml
+  - k6-test-script.yaml
   # Workloads (resource-optimization workflow targets these)
   - cart.yaml
   - checkout.yaml
