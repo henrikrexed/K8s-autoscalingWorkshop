@@ -62,7 +62,7 @@ spec:
             - name: K6_VUS
               value: "5"
             - name: K6_DURATION
-              value: "0"
+              value: "87600h"
             - name: K6_OTEL_GRPC_EXPORTER_INSECURE
               value: "true"
             - name: K6_OTEL_EXPORTER_OTLP_ENDPOINT
